@@ -228,9 +228,17 @@ fn split_modifiers(input: &str) -> Result<Vec<&str>, Error> {
 fn split_keys(input: &str) -> Result<Vec<&str>, Error> {
     let mut keys: Vec<&str> = Vec::new();
     let mut start = 0;
+    let mut is_escaped = false;
     let mut is_group = false;
 
     for (mut i, ch) in input.char_indices() {
+        if is_escaped {
+            is_escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            is_escaped = true;
+        }
         match (is_group, ch) {
             // Mismatched group delimeters
             (true, '<') => return Err(Error::UnexpectedGroupOpen),
@@ -282,6 +290,9 @@ mod tests {
         assert_eq!(split_keys("<C-a>b"), Ok(vec!["<C-a>", "b"]));
         assert_eq!(split_keys("b<C-a>"), Ok(vec!["b", "<C-a>"]));
         assert_eq!(split_keys("<C-a><C-b>"), Ok(vec!["<C-a>", "<C-b>"]));
+        assert_eq!(split_keys("\\>"), Ok(vec!["\\>"]));
+        assert_eq!(split_keys("\\<"), Ok(vec!["\\<"]));
+        assert_eq!(split_keys("a\\<b"), Ok(vec!["a", "\\<", "b"]));
 
         assert_eq!(split_keys("<a"), Err(Error::UnexpectedEnd));
         assert_eq!(split_keys("a<C-a><"), Err(Error::UnexpectedEnd));
@@ -578,6 +589,40 @@ mod tests {
             parse_key("<C-\\->"),
             Ok(Key {
                 name: KeyName::Dash,
+                modifiers: Modifiers {
+                    control: true,
+                    ..Default::default()
+                }
+            })
+        );
+        assert_eq!(
+            parse_key("\\<"),
+            Ok(Key {
+                name: KeyName::LessThan,
+                modifiers: Modifiers::default(),
+            })
+        );
+        assert_eq!(
+            parse_key("<C-\\<>"),
+            Ok(Key {
+                name: KeyName::LessThan,
+                modifiers: Modifiers {
+                    control: true,
+                    ..Default::default()
+                }
+            })
+        );
+        assert_eq!(
+            parse_key("\\>"),
+            Ok(Key {
+                name: KeyName::GreaterThan,
+                modifiers: Modifiers::default(),
+            })
+        );
+        assert_eq!(
+            parse_key("<C-\\>>"),
+            Ok(Key {
+                name: KeyName::GreaterThan,
                 modifiers: Modifiers {
                     control: true,
                     ..Default::default()
