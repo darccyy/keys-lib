@@ -5,3 +5,8 @@ edition = "2021"
 
 [dependencies]
 thiserror = "1.0.50"
+ggez = { version = "0.9.3", optional = true }
+
+[features]
+ggez = ["dep:ggez"]
+default = ["ggez"]

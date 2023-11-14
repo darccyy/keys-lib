@@ -1,3 +1,5 @@
+#[cfg(feature = "ggez")]
+mod ggez;
 #[cfg(test)]
 mod tests;
 
@@ -19,98 +21,117 @@ pub struct Modifiers {
 
 macro_rules! define_key_name {
     ( $(
-        $ident:ident $lower:literal $( $upper:literal )?
-    ),* $(,)? ) =>{
+        $ident:ident,
+        $($lower:literal)?,
+        $($upper:literal)?,
+        $($ggez:ident)?
+    );* $(;)? ) =>{
         #[derive(Clone, Copy, Debug, PartialEq)]
         pub enum KeyName {
             $( $ident ),*
         }
 
         impl KeyName {
-            fn from_str(value: &str) -> Option<(Self, bool)> {
+            pub fn from_str(value: &str) -> Option<(Self, bool)> {
                 Some(match value {
                     $(
-                        $lower => (KeyName::$ident, false),
-                        $(
-                            $upper => (KeyName::$ident, true),
-                        )?
+                        $( $lower => (KeyName::$ident, false), )?
+                        $( $upper => (KeyName::$ident, true), )?
                     )*
                     _ => return None,
                 })
+            }
+        }
+
+        #[cfg(feature = "ggez")]
+        mod ggez_key_name {
+            use ggez::input::keyboard::KeyCode;
+            use super::KeyName;
+            impl TryFrom<KeyCode> for KeyName {
+                type Error = ();
+                fn try_from(keycode: KeyCode) -> Result<Self, Self::Error> {
+                    Ok(match keycode {
+                        $(
+                            $( KeyCode::$ggez => KeyName::$ident, )?
+                        )*
+                        _ => return Err(()),
+                    })
+                }
             }
         }
     };
 }
 
 define_key_name!(
-    A "a" "A",
-    B "b" "B",
-    C "c" "C",
-    D "d" "D",
-    E "e" "E",
-    F "f" "F",
-    G "g" "G",
-    H "h" "H",
-    I "i" "I",
-    J "j" "J",
-    K "k" "K",
-    L "l" "L",
-    M "m" "M",
-    N "n" "N",
-    O "o" "O",
-    P "p" "P",
-    Q "q" "Q",
-    R "r" "R",
-    S "s" "S",
-    T "t" "T",
-    U "u" "U",
-    V "v" "V",
-    W "w" "W",
-    X "x" "X",
-    Y "y" "Y",
-    Z "z" "Z",
-    Number0 "0",
-    Number1 "1",
-    Number2 "2",
-    Number3 "3",
-    Number4 "4",
-    Number5 "5",
-    Number6 "6",
-    Number7 "7",
-    Number8 "8",
-    Number9 "9",
-    Bang "!",
-    At "@",
-    Pound "#",
-    Dollar "$",
-    Percent "%",
-    Carrot "^",
-    Ampersand "&",
-    Star "*",
-    ParenthesisLeft "(",
-    ParenthesisRight ")",
-    BracketLeft "[",
-    BracketRight "]",
-    BraceLeft "{",
-    BraceRight "}",
-    Backtick "`",
-    Tilde "~",
-    Equals "=",
-    Underscore "_",
-    Plus "+",
-    ForwardSlash "/",
-    Backslash "\\",
-    Question "?",
-    Pipe "|",
-    SingleQuote "'",
-    DoubleQuote "\"",
-    Comma ",",
-    Period ".",
-    Colon ":",
-    Semicolon ";",
-    Dash "\\-",
-    LessThan "\\<",
-    GreaterThan "\\>",
+    A,            "a", "A", A;
+    B,            "b", "B", B;
+    C,            "c", "C", C;
+    D,            "d", "D", D;
+    E,            "e", "E", E;
+    F,            "f", "F", F;
+    G,            "g", "G", G;
+    H,            "h", "H", H;
+    I,            "i", "I", I;
+    J,            "j", "J", J;
+    K,            "k", "K", K;
+    L,            "l", "L", L;
+    M,            "m", "M", M;
+    N,            "n", "N", N;
+    O,            "o", "O", O;
+    P,            "p", "P", P;
+    Q,            "q", "Q", Q;
+    R,            "r", "R", R;
+    S,            "s", "S", S;
+    T,            "t", "T", T;
+    U,            "u", "U", U;
+    V,            "v", "V", V;
+    W,            "w", "W", W;
+    X,            "x", "X", X;
+    Y,            "y", "Y", Y;
+    Z,            "z", "Z", Z;
+    Number0,      "0",    , Key0;
+    Number1,      "1",    , Key1;
+    Number2,      "2",    , Key2;
+    Number3,      "3",    , Key3;
+    Number4,      "4",    , Key4;
+    Number5,      "5",    , Key5;
+    Number6,      "6",    , Key6;
+    Number7,      "7",    , Key7;
+    Number8,      "8",    , Key8;
+    Number9,      "9",    , Key9;
+    Bang,         "!",    , ;
+    At,           "@",    , ;
+    Pound,        "#",    , ;
+    Dollar,       "$",    , ;
+    Percent,      "%",    , ;
+    Carrot,       "^",    , ;
+    Ampersand,    "&",    , ;
+    Star,         "*",    , ;
+    ParenLeft,    "(",    , ;
+    ParenRight,   ")",    , ;
+    BracketLeft,  "[",    , ;
+    BracketRight, "]",    , ;
+    BraceLeft,    "{",    , ;
+    BraceRight,   "}",    , ;
+    Backtick,     "`",    , ;
+    Tilde,        "~",    , ;
+    Equals,       "=",    , ;
+    Underscore,   "_",    , ;
+    Plus,         "+",    , ;
+    ForwardSlash, "/",    , ;
+    Backslash,    "\\",   , ;
+    Question,     "?",    , ;
+    Pipe,         "|",    , ;
+    SingleQuote,  "'",    , ;
+    DoubleQuote,  "\"",   , ;
+    Comma,        ",",    , ;
+    Period,       ".",    , ;
+    Colon,        ":",    , ;
+    Semicolon,    ";",    , ;
+    Dash,         "\\-",  , ;
+    LessThan,     "\\<",  , ;
+    GreaterThan,  "\\>",  , ;
+    Space,        ,       , Space;
 );
 
 #[derive(Clone, Debug, thiserror::Error, PartialEq)]
