@@ -161,11 +161,12 @@ fn parse_key_no_modifier(input: &str) -> Result<Key, Error> {
 }
 
 fn parse_key_with_modifier(input: &str) -> Result<Key, Error> {
-    if !input.contains('-') {
+    let modifier_strings = split_modifiers(input)?;
+    if modifier_strings.len() < 2 {
         return Err(Error::IncompleteGroup(input.to_string()));
     }
+    let mut modifier_strings = modifier_strings.into_iter();
 
-    let mut modifier_strings = input.split('-');
     let Some(name) = modifier_strings.next_back() else {
         return Err(Error::NoKeyName);
     };
@@ -194,11 +195,40 @@ fn parse_key_with_modifier(input: &str) -> Result<Key, Error> {
     Ok(Key { modifiers, name })
 }
 
+fn split_modifiers(input: &str) -> Result<Vec<&str>, Error> {
+    let mut keys: Vec<&str> = Vec::new();
+    let mut start = 0;
+    let mut is_escaped = false;
+
+    for (i, ch) in input.char_indices() {
+        if is_escaped {
+            is_escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            is_escaped = true;
+        } else if ch == '-' {
+            if start != i {
+                keys.push(&input[start..i]);
+            }
+            start = i + 1;
+        }
+    }
+
+    if start < input.len() {
+        if is_escaped {
+            panic!("cannot escape end of group");
+        }
+        keys.push(&input[start..]);
+    }
+
+    Ok(keys)
+}
+
 fn split_keys(input: &str) -> Result<Vec<&str>, Error> {
     let mut keys: Vec<&str> = Vec::new();
-    let mut is_group = false;
-    // Byte index of key to push
     let mut start = 0;
+    let mut is_group = false;
 
     for (mut i, ch) in input.char_indices() {
         match (is_group, ch) {
@@ -252,12 +282,30 @@ mod tests {
         assert_eq!(split_keys("<C-a>b"), Ok(vec!["<C-a>", "b"]));
         assert_eq!(split_keys("b<C-a>"), Ok(vec!["b", "<C-a>"]));
         assert_eq!(split_keys("<C-a><C-b>"), Ok(vec!["<C-a>", "<C-b>"]));
+
         assert_eq!(split_keys("<a"), Err(Error::UnexpectedEnd));
         assert_eq!(split_keys("a<C-a><"), Err(Error::UnexpectedEnd));
         assert_eq!(split_keys("<C-<a>"), Err(Error::UnexpectedGroupOpen));
         assert_eq!(split_keys("C-<<a>"), Err(Error::UnexpectedGroupOpen));
         assert_eq!(split_keys("a>"), Err(Error::UnexpectedGroupClose));
         assert_eq!(split_keys("<C-a>>"), Err(Error::UnexpectedGroupClose));
+    }
+
+    #[test]
+    fn split_modifiers_works() {
+        assert_eq!(split_modifiers("a"), Ok(vec!["a"]));
+        assert_eq!(split_modifiers("ab"), Ok(vec!["ab"]));
+        assert_eq!(split_modifiers("C-a"), Ok(vec!["C", "a"]));
+        assert_eq!(split_modifiers("C-M-a"), Ok(vec!["C", "M", "a"]));
+        assert_eq!(split_modifiers("\\a"), Ok(vec!["\\a"]));
+        assert_eq!(split_modifiers("\\-"), Ok(vec!["\\-"]));
+        assert_eq!(split_modifiers("C-\\-"), Ok(vec!["C", "\\-"]));
+        assert_eq!(split_modifiers("--"), Ok(vec![]));
+        assert_eq!(split_modifiers("-a"), Ok(vec!["a"]));
+        assert_eq!(split_modifiers("--a"), Ok(vec!["a"]));
+        assert_eq!(split_modifiers("C--"), Ok(vec!["C"]));
+
+        // assert_eq!(split_modifiers("C-\\"), Err(Error::));
     }
 
     #[test]
@@ -375,19 +423,19 @@ mod tests {
 
         assert_eq!(
             parse_keys("<C->"),
-            Err(Error::InvalidKeyName("".to_string()))
+            Err(Error::IncompleteGroup("C-".to_string()))
         );
         assert_eq!(
             parse_keys("<C-->"),
-            Err(Error::InvalidKeyName("".to_string()))
+            Err(Error::IncompleteGroup("C--".to_string()))
         );
         assert_eq!(
             parse_keys("<-a>"),
-            Err(Error::InvalidKeyModifier("".to_string()))
+            Err(Error::IncompleteGroup("-a".to_string()))
         );
         assert_eq!(
             parse_keys("<--a>"),
-            Err(Error::InvalidKeyModifier("".to_string()))
+            Err(Error::IncompleteGroup("--a".to_string()))
         );
     }
 
@@ -519,13 +567,23 @@ mod tests {
                 modifiers: Modifiers::default(),
             })
         );
-        // assert_eq!(
-        //     parse_key("\\-"),
-        //     Ok(Key {
-        //         name: KeyName::Dash,
-        //         modifiers: Modifiers::default(),
-        //     })
-        // );
+        assert_eq!(
+            parse_key("\\-"),
+            Ok(Key {
+                name: KeyName::Dash,
+                modifiers: Modifiers::default(),
+            })
+        );
+        assert_eq!(
+            parse_key("<C-\\->"),
+            Ok(Key {
+                name: KeyName::Dash,
+                modifiers: Modifiers {
+                    control: true,
+                    ..Default::default()
+                }
+            })
+        );
 
         assert_eq!(parse_key("<"), Err(Error::InvalidKeyName("<".to_string())));
         assert_eq!(parse_key(">"), Err(Error::InvalidKeyName(">".to_string())));
@@ -550,19 +608,19 @@ mod tests {
 
         assert_eq!(
             parse_key("<C->"),
-            Err(Error::InvalidKeyName("".to_string()))
+            Err(Error::IncompleteGroup("C-".to_string()))
         );
         assert_eq!(
             parse_key("<C-->"),
-            Err(Error::InvalidKeyName("".to_string()))
+            Err(Error::IncompleteGroup("C--".to_string()))
         );
         assert_eq!(
             parse_key("<-a>"),
-            Err(Error::InvalidKeyModifier("".to_string()))
+            Err(Error::IncompleteGroup("-a".to_string()))
         );
         assert_eq!(
             parse_key("<--a>"),
-            Err(Error::InvalidKeyModifier("".to_string()))
+            Err(Error::IncompleteGroup("--a".to_string()))
         );
     }
 }
