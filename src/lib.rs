@@ -130,13 +130,41 @@ pub enum Error {
 
 pub fn parse_keys(input: &str) -> Result<Keys, Error> {
     let mut keys = Vec::new();
-    for key in split_keyss(input)? {
+    for key in split_keys(input)? {
         keys.push(parse_key(&key)?);
     }
     Ok(Keys(keys))
 }
 
 pub fn parse_key(input: &str) -> Result<Key, Error> {
+    if input.starts_with('<') && input.ends_with('>') {
+        let mut chars = input.chars();
+        chars.next();
+        chars.next_back();
+        parse_key_with_modifier(chars.as_str())
+    } else {
+        parse_key_no_modifier(input)
+    }
+}
+
+fn parse_key_no_modifier(input: &str) -> Result<Key, Error> {
+    let Some((name, shift)) = KeyName::from_str(input) else {
+        return Err(Error::InvalidKeyName(input.to_string()));
+    };
+
+    let modifiers = Modifiers {
+        shift,
+        ..Default::default()
+    };
+
+    Ok(Key { modifiers, name })
+}
+
+fn parse_key_with_modifier(input: &str) -> Result<Key, Error> {
+    if !input.contains('-') {
+        return Err(Error::IncompleteGroup(input.to_string()));
+    }
+
     let mut modifier_strings = input.split('-');
     let Some(name) = modifier_strings.next_back() else {
         return Err(Error::NoKeyName);
@@ -166,54 +194,71 @@ pub fn parse_key(input: &str) -> Result<Key, Error> {
     Ok(Key { modifiers, name })
 }
 
-fn split_keyss(input: &str) -> Result<Vec<String>, Error> {
-    let mut key_strings: Vec<String> = Vec::new();
-    let mut escaped = false;
-    let mut key_string_current: Option<String> = None;
-    for ch in input.chars() {
-        if escaped {
-            escaped = false;
-            key_strings.push(ch.to_string());
-            continue;
+fn split_keys(input: &str) -> Result<Vec<&str>, Error> {
+    let mut keys: Vec<&str> = Vec::new();
+    let mut is_group = false;
+    // Byte index of key to push
+    let mut start = 0;
+
+    for (mut i, ch) in input.char_indices() {
+        match (is_group, ch) {
+            // Mismatched group delimeters
+            (true, '<') => return Err(Error::UnexpectedGroupOpen),
+            (false, '>') => return Err(Error::UnexpectedGroupClose),
+
+            // Open group
+            (_, '<') => is_group = true,
+            // Close group
+            (_, '>') => {
+                is_group = false;
+                i += 1;
+            }
+
+            // Any character inside group - do not push key yet
+            (true, _) => continue,
+
+            _ => (),
         }
-        match ch {
-            '\\' => escaped = true,
-            '<' => {
-                if key_string_current.is_some() {
-                    return Err(Error::UnexpectedGroupOpen);
-                }
-                key_string_current = Some(String::new());
-            }
-            '>' => {
-                if let Some(current) = key_string_current {
-                    if !current.contains('-') {
-                        return Err(Error::IncompleteGroup(current));
-                    }
-                    key_strings.push(current);
-                    key_string_current = None;
-                } else {
-                    return Err(Error::UnexpectedGroupClose);
-                }
-            }
-            _ => {
-                if let Some(current) = &mut key_string_current {
-                    current.push(ch);
-                } else {
-                    key_strings.push(ch.to_string())
-                }
-            }
+
+        // Push key based on index
+        if start != i {
+            keys.push(&input[start..i]);
+            start = i;
         }
-    }
-    if key_string_current.is_some() {
-        return Err(Error::UnexpectedEnd);
     }
 
-    Ok(key_strings)
+    // Push last key
+    if start < input.len() {
+        // Missing closing delimeter
+        if is_group {
+            return Err(Error::UnexpectedEnd);
+        }
+        keys.push(&input[start..]);
+    }
+
+    Ok(keys)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn split_keys_works() {
+        assert_eq!(split_keys(""), Ok(vec![]));
+        assert_eq!(split_keys("a"), Ok(vec!["a"]));
+        assert_eq!(split_keys("ab"), Ok(vec!["a", "b"]));
+        assert_eq!(split_keys("<C-a>"), Ok(vec!["<C-a>"]));
+        assert_eq!(split_keys("<C-a>b"), Ok(vec!["<C-a>", "b"]));
+        assert_eq!(split_keys("b<C-a>"), Ok(vec!["b", "<C-a>"]));
+        assert_eq!(split_keys("<C-a><C-b>"), Ok(vec!["<C-a>", "<C-b>"]));
+        assert_eq!(split_keys("<a"), Err(Error::UnexpectedEnd));
+        assert_eq!(split_keys("a<C-a><"), Err(Error::UnexpectedEnd));
+        assert_eq!(split_keys("<C-<a>"), Err(Error::UnexpectedGroupOpen));
+        assert_eq!(split_keys("C-<<a>"), Err(Error::UnexpectedGroupOpen));
+        assert_eq!(split_keys("a>"), Err(Error::UnexpectedGroupClose));
+        assert_eq!(split_keys("<C-a>>"), Err(Error::UnexpectedGroupClose));
+    }
 
     #[test]
     fn parse_keys_works() {
@@ -373,7 +418,7 @@ mod tests {
             })
         );
         assert_eq!(
-            parse_key("C-a"),
+            parse_key("<C-a>"),
             Ok(Key {
                 name: KeyName::A,
                 modifiers: Modifiers {
@@ -383,7 +428,7 @@ mod tests {
             })
         );
         assert_eq!(
-            parse_key("C-B"),
+            parse_key("<C-B>"),
             Ok(Key {
                 name: KeyName::B,
                 modifiers: Modifiers {
@@ -394,7 +439,7 @@ mod tests {
             })
         );
         assert_eq!(
-            parse_key("M-a"),
+            parse_key("<M-a>"),
             Ok(Key {
                 name: KeyName::A,
                 modifiers: Modifiers {
@@ -404,7 +449,7 @@ mod tests {
             })
         );
         assert_eq!(
-            parse_key("M-A"),
+            parse_key("<M-A>"),
             Ok(Key {
                 name: KeyName::A,
                 modifiers: Modifiers {
@@ -415,7 +460,7 @@ mod tests {
             })
         );
         assert_eq!(
-            parse_key("C-M-b"),
+            parse_key("<C-M-b>"),
             Ok(Key {
                 name: KeyName::B,
                 modifiers: Modifiers {
@@ -426,7 +471,7 @@ mod tests {
             })
         );
         assert_eq!(
-            parse_key("M-C-a"),
+            parse_key("<M-C-a>"),
             Ok(Key {
                 name: KeyName::A,
                 modifiers: Modifiers {
@@ -437,7 +482,7 @@ mod tests {
             })
         );
         assert_eq!(
-            parse_key("C-M-A"),
+            parse_key("<C-M-A>"),
             Ok(Key {
                 name: KeyName::A,
                 modifiers: Modifiers {
@@ -457,7 +502,7 @@ mod tests {
             })
         );
         assert_eq!(
-            parse_key("C-!"),
+            parse_key("<C-!>"),
             Ok(Key {
                 name: KeyName::Bang,
                 modifiers: Modifiers {
@@ -484,16 +529,39 @@ mod tests {
 
         assert_eq!(parse_key("<"), Err(Error::InvalidKeyName("<".to_string())));
         assert_eq!(parse_key(">"), Err(Error::InvalidKeyName(">".to_string())));
-        assert_eq!(parse_key("-"), Err(Error::InvalidKeyName("".to_string())));
+        assert_eq!(parse_key("-"), Err(Error::InvalidKeyName("-".to_string())));
 
-        assert_eq!(parse_key("C-"), Err(Error::InvalidKeyName("".to_string())));
-        assert_eq!(parse_key("C--"), Err(Error::InvalidKeyName("".to_string())));
+        assert_eq!(
+            parse_key("C-"),
+            Err(Error::InvalidKeyName("C-".to_string()))
+        );
+        assert_eq!(
+            parse_key("C--"),
+            Err(Error::InvalidKeyName("C--".to_string()))
+        );
         assert_eq!(
             parse_key("-a"),
-            Err(Error::InvalidKeyModifier("".to_string()))
+            Err(Error::InvalidKeyName("-a".to_string()))
         );
         assert_eq!(
             parse_key("--a"),
+            Err(Error::InvalidKeyName("--a".to_string()))
+        );
+
+        assert_eq!(
+            parse_key("<C->"),
+            Err(Error::InvalidKeyName("".to_string()))
+        );
+        assert_eq!(
+            parse_key("<C-->"),
+            Err(Error::InvalidKeyName("".to_string()))
+        );
+        assert_eq!(
+            parse_key("<-a>"),
+            Err(Error::InvalidKeyModifier("".to_string()))
+        );
+        assert_eq!(
+            parse_key("<--a>"),
             Err(Error::InvalidKeyModifier("".to_string()))
         );
     }
